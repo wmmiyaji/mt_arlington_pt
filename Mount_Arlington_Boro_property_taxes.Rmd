@@ -1,0 +1,458 @@
+---
+output:
+  html_document: default
+params: 
+    set_title: "Local Property Taxes - Mount Arlington Boro"
+    muni_code: 1426
+title: "`r params$set_title`"
+author: 
+date: "4/16/2020"
+
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(sf)
+library(ggthemes)
+library(viridis)
+library(lubridate)
+# lookup: https://www.r-bloggers.com/r-markdown-template-for-business-reports/
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+muni.code <- params$muni_code    
+
+source("./R/build_muni_data_files.R")
+source("./R/building_gis_data_files.R")
+target.town <- muni.name
+target.town.tax.data <- one.town.tax.data
+
+Property_Class_Codes <- read_csv("./Data_In/Property_Class_Codes.csv") %>% 
+  select(1:2) %>% as.data.frame()
+```
+
+```{r }
+
+  ggplot() + 
+  geom_sf(data = Parcels.sf, fill= "blue") +
+  theme_map()
+  
+```
+
+## Abstract
+
+Local property taxes are always concern of homeowners in `r target.town` and Morris County. Those pay these directly each quarter, as well as those who pay taxes through their mortgage servicer are well aware of these costs. Renters, of course, pay them as well through their rent payments. 
+
+In this note we are going to explore annual tax files compiled and posted on a New Jersey state website. We can get a sense of the distribution of taxes by lot, assessed value, the size of the lots and other attributes. We will use both statistical and geographic mapping tools to get some insights. 
+
+## Data Sources
+
+I was looking for a data source that was relatively easy to work with and provided annual property taxes by address. I want a number of years of data to be able to look at changes over time. 
+
+Most are familar with Zillow. It does provide annual taxes and property assessement as well as their own proprietary value assessments. However if you run "robotstxt"^[See for more details,  https://cran.r-project.org/web/packages/robotstxt/vignettes/using_robotstxt.html.] one finds that robot scraping of the Zillow site is not allowed. More complex pages such as these are tedius to parse and tend to change frequently. 
+
+So I turned to public data sources. First there one site I am aware of maintained by Morris County. First is by the Morris County Tax Board.^[http://mcweb1.co.morris.nj.us/MCTaxBoard/SearchTaxRecords.aspx] Here you can search by year, municipality, house number and street name for an individual record. The years seem to run from 2000 to 2020. To use this efficiently one we need a list of the addresses to start, then create some code that selects the inputs and then parses the output. I did not find a robots.txt file for this site, which is consistent with public data. 
+
+Continuing on I, identified a New Jersey Resource for the local property tax data. The State of New Jersey, Department of the Treasury collects assessment files from each Assesor to the County Board of Taxation. These are available for all 21 counties and from 2009 to 2019.^[https://www.state.nj.us/treasury/taxation/lpt/TaxListSearchPublicWebpage.shtml]
+The files are in a fixed width format so the key is needed to separate the data into its 96 fields. That layout document is also found there.^[https://www.state.nj.us/treasury/taxation/lpt/MODIV-Counties/2018/MODIVLayout2019.pdf] While a layout file is provided for all 11 years, it looked to me that the layout file was the same for each year. So I just used one them. Also the County and District(Municipality) was encoded as a four digit number so the crosswalk to recognizable names was also required and provided elsewhere on the Treasury website.^[https://www.state.nj.us/treasury/taxation/pdf/current/county-muni-codes.pdf]
+
+The task was then for Department of Treasury website was to write code that would download, save locally, untar, parse and combine all eleven files into one data frame. 
+
+The next data source needed is geographic information. What I was looking for was polygons for each of the lots. That would enable one to create choropleth maps of the towns where the polygons are filled in with a color key of a particular attribute, such as tne zoning designation. The one dataset I found that fills this need is provided by the  Morris County Geographic Information System.^[http://morrisgisapps.co.morris.nj.us/gisdata.html] The data is available for download as an ESRI shapefile. ESRI is geographic information systems software company that has become a defacto standard for this information and provides proprietary software to use this data. There are also tools in open source systems to handle these shapefiles, which we are using here. The three files that are used herein are the "Parcels", "Municipalities" and "Counties_Morris".  
+
+These three files are downloaded from the Morris County (GIS) system, unzipped and converted from the ESRI shapefile format to a Simple Features format for processing. 
+
+
+## Attributes
+
+### Zones 
+
+In order to understand the zones you need the list and the definitions of the abbreviations.^[source:https://ecode360.com/10244401]
+
+Need help to find this info for all 39 towns. 
+
+
+### List of the Property codes - need for Mt Arlington
+
+source: N.J. Admin. Code § 18:12-2.2
+
+1	Vacant Land	
+
+2	Residential (1-4 Units)	
+
+3A	Farm (Regular)	
+
+3B	Farm (Qualified)
+
+4A	Commercial	
+
+4B	Industrial	
+
+4C	Apartment (≥ 5 Units)	
+
+5A	Railroad Class I	
+
+5B	Railroad Class II	
+ 	
+6A	Telephone
+
+6B	Telegraph
+
+6C	Messenger
+
+7P	Parking Unit
+
+15A	Public School Property
+
+15B	Other School Property
+
+15C	Public Property
+
+15D	Church & Charitable
+
+15E	Cemeteries & Graveyards
+
+15F	Other Exempt
+
+### 
+
+```{r }
+residential.target.town.tax.data <- target.town.tax.data%>% 
+  filter(substr(ZONING,1,1) == "R", 
+         ZONING != "ROAD", 
+         PROPERTY_CLASS ==2, 
+         year == 2019) 
+
+res.parcels.count <- nrow(residential.target.town.tax.data)
+
+residential.target.town.tax.data%>% 
+  group_by(ZONING) %>%  
+  summarize(Count = n() ) %>%  
+  ggplot(aes(x=ZONING, y = Count, color = ZONING)) + 
+    geom_label(aes(x = ZONING, y = Count + 100, label = Count)) + 
+    labs(title = "Count of Parcels by Residential Zoning 2019 - Draft",
+         subtitle = paste("Total Residential Parcels", res.parcels.count )) + 
+    theme_bw() + 
+    theme(legend.position = "none")
+
+```
+
+##
+
+```{r }
+
+target.town.tax.data %>% 
+  filter(substr(ZONING,1,1) == "R", ZONING != "ROAD", PROPERTY_CLASS ==2, year == 2019) %>% 
+  mutate(LAST_YEAR_TAX = as.numeric(LAST_YEAR_TAX)) %>% 
+  ggplot(aes(x=ZONING, y = round(LAST_YEAR_TAX,2), color = ZONING)) + 
+    geom_boxplot() + 
+    labs(title = "Distribution of 2019 Property Tax by Residential Zoning - Draft") + 
+    theme_bw() + 
+    theme(legend.position = "bottom")
+
+```
+
+### Boxplots Property Taxes over Years and R Zones 
+
+```{r }
+
+
+target.town.tax.data %>% 
+  filter(substr(ZONING,1,1) == "R", PROPERTY_CLASS ==2, ZONING != "ROAD") %>% 
+  ggplot(aes(x=ZONING, y = as.numeric(LAST_YEAR_TAX)/100, color = ZONING)) +      
+    geom_boxplot() + 
+    facet_wrap(~year) + 
+    labs(title = "", 
+         y = "Annual Property Tax") + 
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    theme(legend.position = "none") 
+
+data.out <- target.town.tax.data %>% 
+  filter(substr(ZONING,1,1) == "R", PROPERTY_CLASS ==2, ZONING != "ROAD") %>% 
+  select(PROPERTY_LOCATION, year, LAST_YEAR_TAX) %>% as.data.frame() %>% 
+  group_by(PROPERTY_LOCATION, year) %>% 
+  summarize(LAST_YEAR_TAX = max(as.numeric(LAST_YEAR_TAX),na.rm=T)) %>% 
+  ungroup() %>% 
+  mutate(LAST_YEAR_TAX = round(as.numeric(LAST_YEAR_TAX)/100,2)) %>% 
+  spread(key = year, value = LAST_YEAR_TAX) %>% as.data.frame()
+
+dir.create("./Data_Out/")
+write.csv(data.out, file = paste0("./Data_Out/", str_replace_all(muni.name, " ", "_"), "_taxes_year.csv"))
+
+```
+
+
+### Boxplots Property Taxes over Years and R Zones 
+
+```{r }
+
+target.town.tax.data %>% 
+  filter(substr(ZONING,1,1) == "R", PROPERTY_CLASS ==2, ZONING != "ROAD") %>% 
+  ggplot(aes(x=as.factor(year), y = as.numeric(LAST_YEAR_TAX)/100, color = ZONING)) +      
+    geom_boxplot() + 
+    facet_wrap(~ZONING) + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 0.5)) +
+    labs(title = "", 
+         y = "Annual Property Tax",
+         x = "Year") + 
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    theme(legend.position = "none") 
+
+```
+
+### Map of Residential 
+
+```{r }
+
+Parcels.sf %>% mutate(residential= ifelse(PropCode == "2", T, F)) %>% 
+    ggplot() + 
+  geom_sf(aes(fill = as.factor(residential))) + 
+  labs(title = paste("Property Code Residential"), 
+       fill = "Residential (2)") + 
+  theme_map() + 
+  theme(legend.position = "bottom")
+  
+```
+
+### Map of QFARM 
+
+```{r }
+
+Parcels.sf %>% mutate(qfarm = ifelse(PropCode == "3B", T, F)) %>% 
+    ggplot() + 
+  geom_sf(aes(fill = as.factor(qfarm))) + 
+  labs(title = paste("Qualified Farm Parcels"), 
+       fill = "Qualified Farm (3B)") + 
+  theme_map() + 
+  theme(legend.position = "bottom")
+  
+```
+  
+## Other Farms
+
+```{r }
+
+Parcels.sf %>% mutate(qfarm = ifelse(PropCode == "3A", T, F)) %>% 
+    ggplot() + 
+  geom_sf(aes(fill = as.factor(qfarm))) + 
+  labs(title = paste("Farm Parcels"), 
+       fill = "Farm (3A)") + 
+  theme_map() + 
+  theme(legend.position = "bottom")
+  
+```
+  
+  
+### Count of lots by Zoning
+
+```{r }
+
+total.parcels <- nrow(target.town.tax.data %>% filter(year == "2019"))
+target.town.tax.data %>% 
+  filter(year == "2019") %>% 
+  group_by(ZONING) %>%  
+  summarize(Count = n() ) %>%  
+  ggplot(aes(x=ZONING, y = Count, fill = ZONING)) + 
+    geom_segment( aes(x=ZONING, xend=ZONING, y=0, yend=Count, color = ZONING), size =2) +
+    geom_label(aes(x = ZONING, y = Count, label = Count), color ="white") + 
+    labs(title = "Count of Parcels by Zoning 2019 - Draft",
+         subtitle = paste("Total Parcels", total.parcels)) + 
+    coord_flip() +
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    theme(legend.position = "none")
+```
+
+### Acreage by Zoning 
+
+```{r }
+total.acres <- round(sum(as.numeric(target.town.tax.data$CALCULATED_ACREAGE), na.rm=T)/100000,0)
+target.town.tax.data %>% 
+  group_by(ZONING) %>%  
+  summarize(acres = sum(round(as.numeric(CALCULATED_ACREAGE)/100000,0))) %>%  
+  ggplot(aes(x=ZONING, y = acres, fill = ZONING)) + 
+    geom_segment( aes(x=ZONING, xend=ZONING, y=0, yend=acres, color = ZONING), size =2) +
+    geom_label(aes(x = ZONING, y = acres + 100, label =  acres), color ="white") + 
+    labs(title = "Acreage of Parcels by Residential Zoning 2019 - Draft",
+         subtitle = paste("Total Acres", total.acres )) + 
+    coord_flip() +
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    theme(legend.position = "none")
+```
+
+
+
+### Year Built by Zone 
+
+Need to get a better understanding of the zones. Figure out a way to change the scaling 
+
+```{r }
+
+target.town.tax.data %>% filter(year == 2019, as.numeric(YEAR_CONSTRUCTED) > 1700) %>% 
+  ggplot() + 
+    geom_histogram(binwidth = 5, aes(as.numeric(YEAR_CONSTRUCTED))) +
+    labs(x = "Year Constructed") + 
+    theme_bw()
+
+```
+
+### Count of Senior Citizens
+
+$ 250 deduction for eligible persons. 
+Eligibility for Seniors, Disabled and Surviving Spouses: https://www.state.nj.us/treasury/taxation/pdf/lpt/2019incomeguidelines.pdf
+
+```{r }
+
+target.town.tax.data %>% 
+  filter(substr(ZONING,1,1) == "R", PROPERTY_CLASS ==2, ZONING != "ROAD") %>% 
+    group_by(year) %>% 
+    summarize(Count = sum(as.numeric(SENIOR_CITIZENS_CNT)))  %>% 
+    ggplot(aes(x=as.factor(year), y = Count)) +  
+    geom_label(aes(x = as.factor(year), y = Count + .5, label = Count)) +
+    geom_bar(stat= "identity") + 
+    theme_bw() 
+
+```
+
+### Count of Veterans
+
+```{r }
+
+target.town.tax.data %>% 
+  filter(substr(ZONING,1,1) == "R", PROPERTY_CLASS ==2, ZONING != "ROAD") %>% 
+    group_by(year) %>% 
+    summarize(Count = sum(as.numeric(VETERANS_CNT)))  %>% 
+    ungroup() %>% 
+    ggplot(aes(x=as.factor(year), y = Count)) +   
+      geom_label(aes(x = as.factor(year), y = Count + 5, label = Count)) +
+    labs(x = "Year") + 
+    geom_bar(stat= "identity") + 
+    theme_bw() 
+
+```
+
+### Count of Widows
+
+```{r }
+
+target.town.tax.data %>%
+  filter(substr(ZONING,1,1) == "R", PROPERTY_CLASS ==2, ZONING != "ROAD") %>%
+    group_by(year) %>%
+    summarize(Count = sum(as.numeric(WIDOWS_CNT)))  %>%
+    ungroup() %>%
+    ggplot(aes(x=as.factor(year), y = Count)) +
+        geom_label(aes(x = as.factor(year), y = Count + 2, label = Count)) +
+    geom_bar(stat= "identity") +
+    theme_bw()
+
+```
+
+### Count of SURV_SPOUSE 
+
+
+All Zero 
+
+
+
+### Count of Disabled 
+
+```{r }
+
+target.town.tax.data %>%
+  filter(substr(ZONING,1,1) == "R", PROPERTY_CLASS ==2, ZONING != "ROAD") %>%
+    group_by(year) %>%
+    summarize(Count = sum(as.numeric(DISABLED_CNT)))  %>%
+    ungroup() %>%
+    ggplot(aes(x=as.factor(year), y = Count)) +
+          geom_label(aes(x = as.factor(year), y = Count + .1, label = Count)) +
+    geom_bar(stat="identity") + 
+    theme_bw()
+
+```
+
+Go back and compare with American Community Survey
+
+### Distribution of Net Value 
+
+```{r }
+
+target.town.tax.data %>% 
+  filter(substr(ZONING,1,1) == "R", ZONING != "ROAD", PROPERTY_CLASS ==2, year == 2019) %>% 
+  mutate(NET_VALUE = as.numeric(NET_VALUE)) %>% 
+  ggplot(aes(x=ZONING, y = round(NET_VALUE,2), color = ZONING)) + 
+    geom_boxplot() + 
+    labs(title = "Distribution of 2019 Assessed Value by Residential Zoning - Draft") + 
+    scale_y_continuous(labels = scales::comma) + 
+    theme_bw() + 
+    theme(legend.position = "bottom")
+
+```
+
+### Facet of 2019 Net Value by R Zones
+
+```{r }
+
+target.town.tax.data %>% 
+  filter(substr(ZONING,1,1) == "R", PROPERTY_CLASS ==2, ZONING != "ROAD") %>% 
+  ggplot(aes(x=ZONING, y = as.numeric(NET_VALUE), color = ZONING)) +      
+    geom_boxplot() + 
+    facet_wrap(~year) + 
+    labs(title = "", 
+         y = "Assesed Value") + 
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    theme(legend.position = "none") 
+
+data.out <- target.town.tax.data %>% 
+  filter(substr(ZONING,1,1) == "R", PROPERTY_CLASS ==2, ZONING != "ROAD") %>% 
+  select(PROPERTY_LOCATION, year, NET_VALUE) %>% as.data.frame() %>% 
+  group_by(PROPERTY_LOCATION, year) %>% 
+  summarize(NET_VALUE = max(as.numeric(NET_VALUE),na.rm=T)) %>% 
+  ungroup() %>% 
+  mutate(NET_VALUE = round(as.numeric(NET_VALUE),2)) %>% 
+  spread(key = year, value = NET_VALUE) %>% as.data.frame()
+
+dir.create("./Data_Out/")
+write.csv(data.out, file = "./Data_Out/harding_net_value_year.csv")
+
+```
+
+### Assessed Value 
+
+```{r }
+target.town.tax.data %>% 
+  filter(substr(ZONING,1,1) == "R", PROPERTY_CLASS ==2, ZONING != "ROAD") %>% 
+  ggplot(aes(x=as.factor(year), y = as.numeric(NET_VALUE), color = ZONING)) +      
+    geom_boxplot() + 
+    facet_wrap(~ZONING) + 
+    labs(title = "", 
+         y = "Assesed Value") + 
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+    theme(legend.position = "none") 
+```
+
+
+### Deed Date
+
+Seems to be close to last sale date in zillow but zillow does not seem to have everything and vice versa
+
+Gives an indication of how long the current occupant has lived in a residence. 
+
+
+```{r }
+
+deed.data <- target.town.tax.data %>% filter(year == 2019) %>% 
+  select(PROPERTY_LOCATION, DEED_DATE_MMDDYY) %>% 
+  filter(DEED_DATE_MMDDYY != "000000") %>% 
+  mutate(deed.date = paste0(substr(DEED_DATE_MMDDYY,1,2), "-", substr(DEED_DATE_MMDDYY,3,4), "-", substr(DEED_DATE_MMDDYY,5,6)   ),
+         deed.date = mdy(deed.date))
+
+deed.data %>% 
+  ggplot() +      
+  geom_histogram(aes(deed.date)) + 
+  labs(title = "DEED DATE", 
+       y = "Count") + 
+  theme_bw() 
+```
