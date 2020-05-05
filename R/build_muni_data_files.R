@@ -2,7 +2,7 @@ library(tidyverse)
 library(readr)
 library(lubridate)
 
-#muni.code <- 1426   # Mt Arlington 
+muni.code <- 1426   # Mt Arlington 
 
 # Morris Data https://www.state.nj.us/treasury/taxation/lpt/TaxListSearchPublicWebpage.shtml
 # https://www.state.nj.us/treasury/taxation/lpt/MODIV-Counties/2019/Morris19.zip  most years 

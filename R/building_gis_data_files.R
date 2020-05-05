@@ -22,7 +22,14 @@ download.gis.zip.file <- function(GIS.TYPE) {download.file(url = make_gis_downlo
   }
 
 untar.zip.file <- function(GIS.TYPE){
-  untar(make_gis_zip_destination(GIS.TYPE), exdir = paste0("./Data/Morris/", GIS.TYPE))
+  
+  ifelse(as.character(Sys.info()[1]) == "Darwin",               # Darwin means Mac 
+         untar(make_gis_zip_destination(GIS.TYPE), exdir = paste0("./Data/Morris/", GIS.TYPE)),
+         unzip(make_gis_zip_destination(GIS.TYPE), exdir = paste0("./Data/Morris/", GIS.TYPE)))
+  
+  #untar(make_gis_zip_destination(GIS.TYPE), exdir = paste0("./Data/Morris/", GIS.TYPE))
+  
+  
 }
 
 make.county.gis.sf <- function(GIS.TYPE) {
